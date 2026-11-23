@@ -90,6 +90,41 @@ YELLOW='\033[1;33m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
+get_bhttp_ports() {
+    local ports=""
+    if [[ -f "$BHTTP_SERVICE" ]]; then
+        ports=$(grep -E '--listen' "$BHTTP_SERVICE" 2>/dev/null | grep -oP '(?<=--listen[ =])[^\s\\]+' | tr ',' ' ' | xargs || true)
+    fi
+    if [[ -z "$ports" && -f "/etc/systemd/system/bilola-go-server.service" ]]; then
+        ports=$(grep -E '--listen' "/etc/systemd/system/bilola-go-server.service" 2>/dev/null | grep -oP '(?<=--listen[ =])[^\s\\]+' | tr ',' ' ' | xargs || true)
+    fi
+    if [[ -z "$ports" ]]; then
+        ports=$(ss -tulpn 2>/dev/null | grep 'bilola-server' | awk '{print $5}' | grep -oP '\d+$' | sort -n -u | xargs || true)
+    fi
+    ports_clean=$(echo "$ports" | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+://g' | tr ',' ' ' | xargs)
+    [[ -z "$ports_clean" ]] && echo "80" || echo "$ports_clean"
+}
+
+get_btun_ports() {
+    local ports=""
+    if [[ -f "$BTUN_ENV" ]]; then
+        ports=$(grep -E '^BTUN_TCP_LISTEN=' "$BTUN_ENV" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" || true)
+    fi
+    if [[ -z "$ports" ]]; then
+        ports=$(ss -tulpn 2>/dev/null | grep 'btun-server' | awk '{print $5}' | grep -oP '\d+$' | sort -n -u | xargs || true)
+    fi
+    ports_clean=$(echo "$ports" | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+://g' | tr ',' ' ' | xargs)
+    [[ -z "$ports_clean" ]] && echo "7300" || echo "$ports_clean"
+}
+
+get_bhttp_target() {
+    local target=""
+    if [[ -f "$BHTTP_SERVICE" ]]; then
+        target=$(grep -E '--target' "$BHTTP_SERVICE" 2>/dev/null | grep -oP '(?<=--target[ =])[^\s\\]+' | tr -d '\\' | xargs || true)
+    fi
+    [[ -z "$target" ]] && echo "127.0.0.1:22" || echo "$target"
+}
+
 show_menu() {
     clear
     echo -e "${BLUE}========================================================================${NC}"
@@ -103,17 +138,9 @@ show_menu() {
     echo -e "${CYAN}                📦 Repositorio: 08kenneth/BHTTP                          ${NC}"
     echo -e "${BLUE}========================================================================${NC}"
 
-    # Extraer puertos limpios sin IP, sin corchetes y sin comas
-    bhttp_raw=$(grep -E '--listen' "$BHTTP_SERVICE" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i ~ /--listen/) print $(i+1)}' | tr -d '\\' | xargs || echo "N/A")
-    bhttp_clean=$(echo "$bhttp_raw" | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+://g' | tr ',' ' ' | xargs)
-
-    target_raw=$(grep -E '--target' "$BHTTP_SERVICE" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i ~ /--target/) print $(i+1)}' | tr -d '\\' | xargs || echo "127.0.0.1:22")
-
-    btun_raw=$(grep -E '^BTUN_TCP_LISTEN=' "$BTUN_ENV" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "7300")
-    btun_clean=$(echo "$btun_raw" | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+://g' | tr ',' ' ' | xargs)
-
-    [[ -z "$bhttp_clean" ]] && bhttp_clean="N/A"
-    [[ -z "$btun_clean" ]] && btun_clean="7300"
+    bhttp_clean=$(get_bhttp_ports)
+    target_raw=$(get_bhttp_target)
+    btun_clean=$(get_btun_ports)
 
     echo -e "  ${YELLOW}📡 PUERTOS ACTIVOS${NC} : ${BOLD}BHTTP: ${bhttp_clean}${NC} | ${BOLD}BTUN: ${btun_clean}${NC}"
     echo -e "  ${YELLOW}🎯 DESTINO BHTTP  ${NC} : ${BOLD}${target_raw}${NC}"
@@ -273,7 +300,7 @@ change_user_connections() {
     if [[ "$maxlogins" =~ ^[0-9]+$ ]]; then
         sed -i "/^$username /d" "$LIMITS_FILE"
         echo "$username hard maxlogins $maxlogins" >> "$LIMITS_FILE"
-        echo -e "${GREEN}✅ Límite de '$username' established a $maxlogins conexiones simultáneas.${NC}"
+        echo -e "${GREEN}✅ Límite de '$username' establecido a $maxlogins conexiones simultáneas.${NC}"
     else
         echo -e "${RED}❌ Límite no válido.${NC}"
     fi
