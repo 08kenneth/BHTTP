@@ -16,24 +16,24 @@ echo "   📦 Repositorio: https://github.com/08kenneth/BHTTP.git        "
 echo "================================================================="
 
 # 1. Actualizar e instalar dependencias del sistema
-echo "1/6 🔄 Instalando dependencias del sistema..."
+echo "1/7 🔄 Instalando dependencias del sistema..."
 apt update -y
-apt install -y golang git libpam0g-dev iptables build-essential nano ufw curl
+apt install -y golang git libpam0g-dev iptables build-essential nano ufw curl net-tools
 
 # 2. Clonar o actualizar el repositorio
 REPO_DIR="/root/BHTTP"
 if [[ ! -d "$REPO_DIR" ]]; then
-    echo "2/6 ⬇️ Clonando repositorio desde GitHub..."
+    echo "2/7 ⬇️ Clonando repositorio desde GitHub..."
     git clone https://github.com/08kenneth/BHTTP.git "$REPO_DIR"
 else
-    echo "2/6 ⬇️ Actualizando repositorio desde GitHub..."
+    echo "2/7 ⬇️ Actualizando repositorio desde GitHub..."
     cd "$REPO_DIR" && git pull || true
 fi
 
 cd "$REPO_DIR"
 
 # 3. Dar permisos y compilar
-echo "3/6 ⚙️ Compilando binarios de Go (btun-server, bilola-server, xhttp)..."
+echo "3/7 ⚙️ Compilando binarios de Go (btun-server, bilola-server, xhttp)..."
 chmod +x build-btun.sh deploy/btun/install.sh
 
 CGO_ENABLED=1 ./build-btun.sh
@@ -42,11 +42,11 @@ go build -trimpath -ldflags="-s -w" -o build/bilola-server-linux-$ARCH ./cmd/bil
 go build -trimpath -ldflags="-s -w" -o build/bilola-xhttp-server-linux-$ARCH ./cmd/xhttp-server
 
 # 4. Desplegar servicios systemd
-echo "4/6 🚀 Desplegando servicios systemd de BTUN..."
+echo "4/7 🚀 Desplegando servicios systemd de BTUN..."
 ./deploy/btun/install.sh
 
 # 5. Abrir puertos en UFW Firewall
-echo "5/6 🛡️ Configurando Firewall (UFW)..."
+echo "5/7 🛡️ Configurando Firewall (UFW)..."
 ufw allow 7300/tcp || true
 ufw allow 7300/udp || true
 ufw allow 7080/tcp || true
@@ -55,7 +55,7 @@ ufw allow 80/tcp || true
 ufw allow 443/tcp || true
 
 # 6. Crear menú de administración /usr/local/bin/menu-bhttp
-echo "6/6 🎮 Instalando menú de administración 'menu-bhttp'..."
+echo "6/7 🎮 Instalando menú de administración 'menu-bhttp'..."
 cat << 'MENU_EOF' > /usr/local/bin/menu-bhttp
 #!/usr/bin/env bash
 set -euo pipefail
@@ -71,19 +71,36 @@ show_menu() {
     echo "=================================================="
     echo "   🚀 ADMINISTRADOR BHTTP / BTUN (08kenneth/BHTTP)  "
     echo "=================================================="
+    bhttp_cur=$(grep -E '--listen' "$BHTTP_SERVICE" 2>/dev/null | sed -E 's/.*--listen ([^ ]+).*/\1/' || echo "N/A")
+    btun_cur=$(grep -E 'BTUN_TCP_LISTEN' "$BTUN_ENV" 2>/dev/null | cut -d'=' -f2 || echo "N/A")
+    echo " 📡 Config: BHTTP=[$bhttp_cur] | BTUN=[$btun_cur]"
+    echo "=================================================="
     echo "1) Agregar / Cambiar Puertos BHTTP"
-    echo "2) Cambiar Puerto Nativo BTUN (7300)"
-    echo "3) Crear Nuevo Usuario"
-    echo "4) Cambiar Contraseña de Usuario"
-    echo "5) Eliminar Usuario"
-    echo "6) Listar Usuarios Existentes"
-    echo "7) Actualizar Servidor desde GitHub (08kenneth/BHTTP)"
-    echo "8) Ver Estado de Servicios"
-    echo "9) Reiniciar Servicios"
+    echo "2) Cambiar Puerto Nativo BTUN"
+    echo "3) 🔍 Ver Puertos Actualmente en Uso (Sockets Activos)"
+    echo "4) Crear Nuevo Usuario"
+    echo "5) Cambiar Contraseña de Usuario"
+    echo "6) Eliminar Usuario"
+    echo "7) Listar Usuarios Existentes"
+    echo "8) 🔄 Actualizar Cambios desde GitHub (git pull + recompilar)"
+    echo "9) 🧹 Reiniciar / Descartar Cambios Locales (git reset)"
+    echo "10) Ver Estado de Servicios y Logs de Error"
+    echo "11) Reiniciar Todos los Servicios"
     echo "0) Salir"
     echo "=================================================="
-    read -p "Selecciona una opción [0-9]: " option
+    read -p "Selecciona una opción [0-11]: " option
     echo ""
+}
+
+show_active_ports() {
+    echo "=================================================="
+    echo "   📡 PUERTOS Y SOCKETS ACTUALMENTE ESCUCHANDO    "
+    echo "=================================================="
+    if command -v ss >/dev/null 2>&1; then
+        ss -tulpn | grep -E 'LISTEN|UNCONN' || ss -tulpn
+    elif command -v netstat >/dev/null 2>&1; then
+        netstat -tulpn
+    fi
 }
 
 add_bhttp_ports() {
@@ -100,7 +117,7 @@ add_bhttp_ports() {
     done
     sed -i -E "s|--listen [^ ]+|--listen $listen_arg|g" "$BHTTP_SERVICE"
     systemctl daemon-reload && systemctl restart btun-bhttp
-    echo "✅ Puertos actualizados a: $listen_arg"
+    echo "✅ Puertos BHTTP actualizados a: $listen_arg"
 }
 
 change_btun_port() {
@@ -141,25 +158,62 @@ list_users() {
 }
 
 update_from_github() {
-    cd "$REPO_DIR" && git pull
+    echo "=== ACTUALIZAR CAMBIOS DESDE GITHUB (08kenneth/BHTTP) ==="
+    if [[ ! -d "$REPO_DIR" ]]; then
+        git clone "$REPO_URL" "$REPO_DIR"
+    fi
+    cd "$REPO_DIR"
+    echo "⬇️ Descargando la última versión de GitHub..."
+    git reset --hard HEAD || true
+    git pull origin main || git pull origin master
+
+    echo "⚙️ Recompilando binarios de Go..."
+    chmod +x build-btun.sh deploy/btun/install.sh
     CGO_ENABLED=1 ./build-btun.sh
     ARCH=$(go env GOARCH)
     go build -trimpath -ldflags="-s -w" -o build/bilola-server-linux-$ARCH ./cmd/bilola-server
     go build -trimpath -ldflags="-s -w" -o build/bilola-xhttp-server-linux-$ARCH ./cmd/xhttp-server
+
     ./deploy/btun/install.sh
-    systemctl daemon-reload && systemctl restart btun-protocol btun-routing btun-bhttp btun-xhttp
-    echo "✅ Servidor actualizado desde GitHub."
+    systemctl daemon-reload
+    systemctl restart btun-protocol btun-routing btun-bhttp btun-xhttp
+    echo "✅ Servidor actualizado y reiniciado exitosamente desde GitHub."
 }
 
-status_services() { systemctl status btun-protocol btun-bhttp --no-pager; }
-restart_services() { systemctl restart btun-protocol btun-routing btun-bhttp btun-xhttp; echo "✅ Servicios reiniciados."; }
+reset_local_changes() {
+    echo "=== REINICIAR / DESCARTAR CAMBIOS LOCALES ==="
+    read -p "¿Descartar todos los cambios locales y restaurar estado de Git? (s/n): " confirm
+    if [[ "$confirm" =~ ^[Ss]$ ]]; then
+        cd "$REPO_DIR"
+        git reset --hard HEAD
+        git clean -fd
+        echo "✅ Cambios locales descartados. Repositorio limpio."
+    else
+        echo "Operación cancelada."
+    fi
+}
+
+status_services() {
+    echo "=== ESTADO DE LOS SERVICIOS ==="
+    systemctl status btun-protocol btun-bhttp --no-pager || true
+    echo ""
+    echo "=== ÚLTIMOS LOGS DE ERRORES EN BTUN ==="
+    journalctl -u btun-protocol -n 15 --no-pager || true
+}
+
+restart_services() {
+    echo "🔄 Reiniciando todos los servicios..."
+    systemctl restart btun-protocol btun-routing btun-bhttp btun-xhttp
+    echo "✅ Servicios reiniciados."
+}
 
 while true; do
     show_menu
     case "$option" in
-        1) add_bhttp_ports ;; 2) change_btun_port ;; 3) add_user ;; 4) change_password ;;
-        5) delete_user ;; 6) list_users ;; 7) update_from_github ;; 8) status_services ;;
-        9) restart_services ;; 0) exit 0 ;;
+        1) add_bhttp_ports ;; 2) change_btun_port ;; 3) show_active_ports ;; 4) add_user ;;
+        5) change_password ;; 6) delete_user ;; 7) list_users ;; 8) update_from_github ;;
+        9) reset_local_changes ;; 10) status_services ;; 11) restart_services ;; 0) exit 0 ;;
+        *) echo "❌ Opción no válida." ;;
     esac
     read -p "Presiona ENTER para continuar..." null
 done
