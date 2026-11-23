@@ -74,6 +74,7 @@ cat << 'MENU_EOF' > /usr/local/bin/ktun
 set -euo pipefail
 if [[ "${EUID}" -ne 0 ]]; then echo "❌ Ejecutar como root." >&2; exit 1; fi
 
+VERSION="1.0.1"
 REPO_URL="https://github.com/08kenneth/BHTTP.git"
 REPO_DIR="/root/BHTTP"
 BHTTP_SERVICE="/etc/systemd/system/btun-bhttp.service"
@@ -92,14 +93,9 @@ NC='\033[0m' # No Color
 
 get_bhttp_ports() {
     local ports=""
-    if [[ -f "$BHTTP_SERVICE" ]]; then
+    ports=$(ss -tulpn 2>/dev/null | grep -E 'bilola-server|bilola|bhttp' | awk '{print $5}' | grep -oP '\d+$' | sort -n -u | xargs || true)
+    if [[ -z "$ports" && -f "$BHTTP_SERVICE" ]]; then
         ports=$(grep -E '--listen' "$BHTTP_SERVICE" 2>/dev/null | grep -oP '(?<=--listen[ =])[^\s\\]+' | tr ',' ' ' | xargs || true)
-    fi
-    if [[ -z "$ports" && -f "/etc/systemd/system/bilola-go-server.service" ]]; then
-        ports=$(grep -E '--listen' "/etc/systemd/system/bilola-go-server.service" 2>/dev/null | grep -oP '(?<=--listen[ =])[^\s\\]+' | tr ',' ' ' | xargs || true)
-    fi
-    if [[ -z "$ports" ]]; then
-        ports=$(ss -tulpn 2>/dev/null | grep 'bilola-server' | awk '{print $5}' | grep -oP '\d+$' | sort -n -u | xargs || true)
     fi
     ports_clean=$(echo "$ports" | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+://g' | tr ',' ' ' | xargs)
     [[ -z "$ports_clean" ]] && echo "80" || echo "$ports_clean"
@@ -107,11 +103,9 @@ get_bhttp_ports() {
 
 get_btun_ports() {
     local ports=""
-    if [[ -f "$BTUN_ENV" ]]; then
+    ports=$(ss -tulpn 2>/dev/null | grep -E 'btun-server|btun' | awk '{print $5}' | grep -oP '\d+$' | sort -n -u | xargs || true)
+    if [[ -z "$ports" && -f "$BTUN_ENV" ]]; then
         ports=$(grep -E '^BTUN_TCP_LISTEN=' "$BTUN_ENV" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" || true)
-    fi
-    if [[ -z "$ports" ]]; then
-        ports=$(ss -tulpn 2>/dev/null | grep 'btun-server' | awk '{print $5}' | grep -oP '\d+$' | sort -n -u | xargs || true)
     fi
     ports_clean=$(echo "$ports" | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+://g' | tr ',' ' ' | xargs)
     [[ -z "$ports_clean" ]] && echo "7300" || echo "$ports_clean"
@@ -128,14 +122,15 @@ get_bhttp_target() {
 show_menu() {
     clear
     echo -e "${BLUE}========================================================================${NC}"
-    echo -e "${LBLUE}       ██████╗ ██╗██╗      ██████╗ ██╗      █████╗                   ${NC}"
-    echo -e "${LBLUE}       ██╔══██╗██║██║     ██╔═══██╗██║     ██╔══██╗                  ${NC}"
-    echo -e "${LBLUE}       ██████╔╝██║██║     ██║   ██║██║     ███████║                  ${NC}"
-    echo -e "${LBLUE}       ██╔══██╗██║██║     ██║   ██║██║     ██╔══██║                  ${NC}"
-    echo -e "${LBLUE}       ██████╔╝██║███████╗╚██████╔╝███████╗██║  ██║                  ${NC}"
+    echo -e "${LBLUE}       ██╗  ██╗████████╗██╗   ██╗███╗   ██╗                              ${NC}"
+    echo -e "${LBLUE}       ██║ ██╔╝╚══██╔══╝██║   ██║████╗  ██║                              ${NC}"
+    echo -e "${LBLUE}       █████═╝    ██║   ██║   ██║██╔██╗ ██║                              ${NC}"
+    echo -e "${LBLUE}       ██╔═██╗    ██║   ██║   ██║██║╚██╗██║                              ${NC}"
+    echo -e "${LBLUE}       ██║  ██╗   ██║   ╚██████╔╝██║ ╚████║                              ${NC}"
+    echo -e "${LBLUE}       ╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═══╝                              ${NC}"
     echo -e "${BLUE}========================================================================${NC}"
-    echo -e "${CYAN}             🚀 PANEL DE ADMINISTRACIÓN BHTTP & BTUN                    ${NC}"
-    echo -e "${CYAN}                📦 Repositorio: 08kenneth/BHTTP                          ${NC}"
+    echo -e "${CYAN}          🚀 PANEL DE ADMINISTRACIÓN KTUN v${VERSION}                            ${NC}"
+    echo -e "${CYAN}             📦 Repositorio: 08kenneth/BHTTP                             ${NC}"
     echo -e "${BLUE}========================================================================${NC}"
 
     bhttp_clean=$(get_bhttp_ports)
