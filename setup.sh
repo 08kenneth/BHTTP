@@ -71,8 +71,10 @@ show_menu() {
     echo "=================================================="
     echo "   🚀 ADMINISTRADOR BHTTP / BTUN (08kenneth/BHTTP)  "
     echo "=================================================="
-    bhttp_cur=$(grep -E '--listen' "$BHTTP_SERVICE" 2>/dev/null | sed -E 's/.*--listen ([^ ]+).*/\1/' || echo "N/A")
-    btun_cur=$(grep -E 'BTUN_TCP_LISTEN' "$BTUN_ENV" 2>/dev/null | cut -d'=' -f2 || echo "N/A")
+    bhttp_cur=$(grep -E '--listen' "$BHTTP_SERVICE" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i ~ /--listen/) print $(i+1)}' | tr -d '\\' | xargs || echo "N/A")
+    btun_cur=$(grep -E '^BTUN_TCP_LISTEN=' "$BTUN_ENV" 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'" || echo "7300")
+    [[ -z "$bhttp_cur" ]] && bhttp_cur="N/A"
+    [[ -z "$btun_cur" ]] && btun_cur="0.0.0.0:7300"
     echo " 📡 Config: BHTTP=[$bhttp_cur] | BTUN=[$btun_cur]"
     echo "=================================================="
     echo "1) Agregar / Cambiar Puertos BHTTP"
@@ -110,24 +112,31 @@ add_bhttp_ports() {
     IFS=',' read -ra ADDR <<< "$ports"
     for p in "${ADDR[@]}"; do
         p=$(echo "$p" | xargs)
-        if [[ -n "$p" ]]; then
+        if [[ "$p" =~ ^[0-9]+$ ]]; then
             [[ -z "$listen_arg" ]] && listen_arg="0.0.0.0:$p" || listen_arg="$listen_arg,0.0.0.0:$p"
             command -v ufw >/dev/null 2>&1 && ufw allow "$p"/tcp >/dev/null 2>&1 || true
         fi
     done
-    sed -i -E "s|--listen [^ ]+|--listen $listen_arg|g" "$BHTTP_SERVICE"
-    systemctl daemon-reload && systemctl restart btun-bhttp
-    echo "✅ Puertos BHTTP actualizados a: $listen_arg"
+    if [[ -n "$listen_arg" ]]; then
+        sed -i -E "s|--listen [^ ]+|--listen $listen_arg|g" "$BHTTP_SERVICE"
+        systemctl daemon-reload && systemctl restart btun-bhttp
+        echo "✅ Puertos BHTTP actualizados a: $listen_arg"
+    else
+        echo "❌ Puertos no válidos."
+    fi
 }
 
 change_btun_port() {
     read -p "Nuevo puerto BTUN (ej: 7300): " new_port
-    [[ -z "$new_port" ]] && return
-    sed -i -E "s|BTUN_TCP_LISTEN=0.0.0.0:[0-9]+|BTUN_TCP_LISTEN=0.0.0.0:$new_port|g" "$BTUN_ENV"
-    sed -i -E "s|BTUN_UDP_LISTEN=0.0.0.0:[0-9]+|BTUN_UDP_LISTEN=0.0.0.0:$new_port|g" "$BTUN_ENV"
+    if [[ ! "$new_port" =~ ^[0-9]+$ ]]; then
+        echo "❌ Error: El puerto debe ser un número."
+        return
+    fi
+    sed -i -E "s|^BTUN_TCP_LISTEN=.*|BTUN_TCP_LISTEN=0.0.0.0:$new_port|g" "$BTUN_ENV"
+    sed -i -E "s|^BTUN_UDP_LISTEN=.*|BTUN_UDP_LISTEN=0.0.0.0:$new_port|g" "$BTUN_ENV"
     command -v ufw >/dev/null 2>&1 && ufw allow "$new_port"/tcp >/dev/null 2>&1 && ufw allow "$new_port"/udp >/dev/null 2>&1 || true
     systemctl restart btun-protocol
-    echo "✅ Puerto BTUN actualizado a $new_port."
+    echo "✅ Puerto BTUN actualizado a 0.0.0.0:$new_port."
 }
 
 add_user() {
